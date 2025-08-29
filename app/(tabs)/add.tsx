@@ -10,7 +10,8 @@ import {
   TextInput, 
   SafeAreaView,
   Modal,
-  Image
+  Image,
+  KeyboardAvoidingView
 } from 'react-native';
 import { Plus, Mic, Send, MessageSquarePlus } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
