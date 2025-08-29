@@ -59,12 +59,6 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
   const [showCalendar, setShowCalendar] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   
-  // Use refs for visual state to prevent re-renders
-  const [displayHour, setDisplayHour] = useState('01');
-  const [displayMinute, setDisplayMinute] = useState('00');
-  
-  const hourScrollRef = useRef<ScrollView>(null);
-  const minuteScrollRef = useRef<ScrollView>(null);
   const [calendarDate, setCalendarDate] = useState(new Date());
   
   // Enhanced theme for better light mode visibility
@@ -89,10 +83,7 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
       const day = defaultDate.getDate().toString().padStart(2, '0');
       setScheduledDate(`${year}-${month}-${day}`);
       setCalendarDate(defaultDate);
-      setDisplayHour('12');
-      setDisplayMinute('00');
       setSelectedAmPm('PM');
-      // Initialize display values from scheduledTime
       setScheduledTime('12:00');
     }
   }, [visible]);
@@ -120,14 +111,14 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
     setLoading(true);
     try {
       // Create the scheduled datetime with proper timezone handling
-      const time24Hour = convertTo24Hour(displayHour + ':' + displayMinute, selectedAmPm);
+      const time24Hour = convertTo24Hour(scheduledTime, selectedAmPm);
       
       // Create the scheduled datetime properly
       const dateTimeString = `${scheduledDate}T${time24Hour}:00`;
       const scheduledDateTime = new Date(dateTimeString);
       
       console.log('Scheduled date input:', scheduledDate);
-      console.log('Time input:', `${displayHour}:${displayMinute} ${selectedAmPm}`);
+      console.log('Time input:', `${scheduledTime} ${selectedAmPm}`);
       console.log('Converted 24h time:', time24Hour);
       console.log('DateTime string:', dateTimeString);
       console.log('Final scheduled datetime:', scheduledDateTime.toLocaleString());
@@ -197,8 +188,6 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
     setScheduledDate('');
     setScheduledTime('12:00');
     setSelectedAmPm('PM');
-    setDisplayHour('12');
-    setDisplayMinute('00');
     setShowProfilePicker(false);
     setShowCalendar(false);
     setShowTimePicker(false);
@@ -215,22 +204,20 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
       if (currentHour >= 22) {
         // If it's already 10 PM or later, schedule for tomorrow at 9 AM
         date.setDate(now.getDate() + 1);
-        setDisplayHour('09');
-        setDisplayMinute('00');
+        setScheduledTime('09:00');
         setSelectedAmPm('AM');
       } else {
         // If it's before 10 PM, schedule for today at a reasonable future time
         const suggestedHour = Math.max(currentHour + 1, 19); // At least 1 hour from now, or 7 PM
         date.setDate(now.getDate()); // Explicitly set to today's date
-        setDisplayHour(suggestedHour > 12 ? (suggestedHour - 12).toString().padStart(2, '0') : suggestedHour.toString().padStart(2, '0'));
-        setDisplayMinute('00');
+        const displayHour = suggestedHour > 12 ? (suggestedHour - 12).toString().padStart(2, '0') : suggestedHour.toString().padStart(2, '0');
+        setScheduledTime(`${displayHour}:00`);
         setSelectedAmPm(suggestedHour >= 12 ? 'PM' : 'AM');
       }
     } else {
       // For other quick dates, set to 12:00 PM
       date.setDate(date.getDate() + days);
-      setDisplayHour('12');
-      setDisplayMinute('00');
+      setScheduledTime('12:00');
       setSelectedAmPm('PM');
     }
     
@@ -308,135 +295,150 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
     setShowCalendar(false);
   };
 
-  const commitTimeChange = () => {
-    setScheduledTime(`${displayHour}:${displayMinute}`);
+  const handleTimeSelect = (hour: string, minute: string, ampm: string) => {
+    setScheduledTime(`${hour}:${minute}`);
+    setSelectedAmPm(ampm);
+    setShowTimePicker(false);
   };
 
-  // Sync scroll wheels when time picker opens
-  useEffect(() => {
-    if (showTimePicker) {
-      // Position scroll wheels to match current display time after render
-      setTimeout(() => {
-        const hourIndex = hours.findIndex(h => h === displayHour);
-        const minuteIndex = minutes.findIndex(m => m === displayMinute);
+  const TimePickerModal = () => {
+    const [displayHour, setDisplayHour] = useState('12');
+    const [displayMinute, setDisplayMinute] = useState('00');
+    const [internalAmPm, setInternalAmPm] = useState('PM');
+    
+    const hourScrollRef = useRef<ScrollView>(null);
+    const minuteScrollRef = useRef<ScrollView>(null);
+    
+    // Initialize internal state when modal becomes visible
+    useEffect(() => {
+      if (showTimePicker) {
+        const [hour, minute] = scheduledTime.split(':');
+        setDisplayHour(hour);
+        setDisplayMinute(minute);
+        setInternalAmPm(selectedAmPm);
         
-        if (hourIndex !== -1 && hourScrollRef.current) {
+        // Position scroll wheels after state is set
+        setTimeout(() => {
+          const hours = generateTimeOptions().hours;
+          const minutes = generateTimeOptions().minutes;
+          const hourIndex = hours.findIndex(h => h === hour);
+          const minuteIndex = minutes.findIndex(m => m === minute);
+          
+          if (hourIndex !== -1 && hourScrollRef.current) {
+            hourScrollRef.current.scrollTo({
+              y: hourIndex * 48,
+              animated: false
+            });
+          }
+          
+          if (minuteIndex !== -1 && minuteScrollRef.current) {
+            minuteScrollRef.current.scrollTo({
+              y: minuteIndex * 48,
+              animated: false
+            });
+          }
+        }, 200);
+      }
+    }, [showTimePicker, scheduledTime, selectedAmPm]);
+    
+    const generateTimeOptions = () => {
+      const hours = [];
+      const minutes = [];
+      
+      for (let i = 1; i <= 12; i++) {
+        hours.push(i.toString().padStart(2, '0'));
+      }
+      
+      for (let i = 0; i < 60; i++) {
+        minutes.push(i.toString().padStart(2, '0'));
+      }
+      
+      return { hours, minutes };
+    };
+    
+    const scrollToTimeValue = (type: 'hour' | 'minute', value: string) => {
+      const itemHeight = 48;
+      const { hours, minutes } = generateTimeOptions();
+      const values = type === 'hour' ? hours : minutes;
+      const index = values.findIndex(v => v === value);
+      
+      if (index !== -1) {
+        if (type === 'hour' && hourScrollRef.current) {
           hourScrollRef.current.scrollTo({
-            y: hourIndex * 48,
-            animated: false
+            y: index * itemHeight,
+            animated: true
           });
         }
-        
-        if (minuteIndex !== -1 && minuteScrollRef.current) {
+        if (type === 'minute' && minuteScrollRef.current) {
           minuteScrollRef.current.scrollTo({
-            y: minuteIndex * 48,
-            animated: false
+            y: index * itemHeight,
+            animated: true
           });
         }
-      }, 200);
-    }
-  }, [showTimePicker, displayHour, displayMinute]);
-
-  // Generate time options with proper minute intervals
-  const generateTimeOptions = () => {
-    const hours = [];
-    const minutes = [];
-    
-    for (let i = 1; i <= 12; i++) {
-      hours.push(i.toString().padStart(2, '0'));
-    }
-    
-    for (let i = 0; i < 60; i++) {
-      minutes.push(i.toString().padStart(2, '0'));
-    }
-    
-    return { hours, minutes };
-  };
-
-  const { hours, minutes } = generateTimeOptions();
-  const [selectedHour, selectedMinute] = scheduledTime.split(':');
-
-  const scrollToTimeValue = (type: 'hour' | 'minute', value: string) => {
-    const itemHeight = 48;
-    const values = type === 'hour' ? hours : minutes;
-    const index = values.findIndex(v => v === value);
-    
-    if (index !== -1) {
-      if (type === 'hour' && hourScrollRef.current) {
-        hourScrollRef.current.scrollTo({
-          y: index * itemHeight,
-          animated: true
-        });
       }
-      if (type === 'minute' && minuteScrollRef.current) {
-        minuteScrollRef.current.scrollTo({
-          y: index * itemHeight,
-          animated: true
-        });
-      }
-    }
-  };
-
-  const handleScrollEnd = (event: any, type: 'hour' | 'minute') => {
-    const contentOffsetY = event.nativeEvent.contentOffset.y;
-    const itemHeight = 48;
-    const index = Math.round(contentOffsetY / itemHeight);
-    const values = type === 'hour' ? hours : minutes;
+    };
     
-    // Ensure index is within bounds
-    if (index >= 0 && index < values.length) {
-      const value = values[index];
-      if (type === 'hour') {
-        setDisplayHour(value);
-      } else {
-        setDisplayMinute(value);
+    const handleScrollEnd = (event: any, type: 'hour' | 'minute') => {
+      const contentOffsetY = event.nativeEvent.contentOffset.y;
+      const itemHeight = 48;
+      const index = Math.round(contentOffsetY / itemHeight);
+      const { hours, minutes } = generateTimeOptions();
+      const values = type === 'hour' ? hours : minutes;
+      
+      if (index >= 0 && index < values.length) {
+        const value = values[index];
+        if (type === 'hour') {
+          setDisplayHour(value);
+        } else {
+          setDisplayMinute(value);
+        }
       }
-    }
-  };
-
-  const handleTimeBoxTap = (type: 'hour' | 'minute') => {
-    const currentValue = type === 'hour' ? displayHour : displayMinute;
-    const title = type === 'hour' ? 'Enter Hour' : 'Enter Minute';
-    const message = type === 'hour' ? 'Enter hour (1-12)' : 'Enter minute (0-59)';
+    };
     
-    Alert.prompt(
-      title,
-      message,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'OK',
-          onPress: (text) => {
-            const value = parseInt(text || '');
-            const isValidHour = type === 'hour' && value >= 1 && value <= 12;
-            const isValidMinute = type === 'minute' && value >= 0 && value <= 59;
-            
-            if (isValidHour || isValidMinute) {
-              const valueStr = value.toString().padStart(2, '0');
+    const handleTimeBoxTap = (type: 'hour' | 'minute') => {
+      const currentValue = type === 'hour' ? displayHour : displayMinute;
+      const title = type === 'hour' ? 'Enter Hour' : 'Enter Minute';
+      const message = type === 'hour' ? 'Enter hour (1-12)' : 'Enter minute (0-59)';
+      
+      Alert.prompt(
+        title,
+        message,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'OK',
+            onPress: (text) => {
+              const value = parseInt(text || '');
+              const isValidHour = type === 'hour' && value >= 1 && value <= 12;
+              const isValidMinute = type === 'minute' && value >= 0 && value <= 59;
               
-              if (type === 'hour') {
-                setDisplayHour(valueStr);
+              if (isValidHour || isValidMinute) {
+                const valueStr = value.toString().padStart(2, '0');
+                
+                if (type === 'hour') {
+                  setDisplayHour(valueStr);
+                } else {
+                  setDisplayMinute(valueStr);
+                }
+                
+                setTimeout(() => {
+                  scrollToTimeValue(type, valueStr);
+                }, 100);
               } else {
-                setDisplayMinute(valueStr);
+                const range = type === 'hour' ? '1 and 12' : '0 and 59';
+                Alert.alert(`Invalid ${type.charAt(0).toUpperCase() + type.slice(1)}`, `Please enter a number between ${range}`);
               }
-              
-              // Position scroll wheel to match typed value with delay to ensure state is updated
-              setTimeout(() => {
-                scrollToTimeValue(type, valueStr);
-              }, 100);
-            } else {
-              const range = type === 'hour' ? '1 and 12' : '0 and 59';
-              Alert.alert(`Invalid ${type.charAt(0).toUpperCase() + type.slice(1)}`, `Please enter a number between ${range}`);
             }
           }
-        }
-      ],
-      'plain-text',
-      currentValue
-    );
-  };
-
-  const TimePickerModal = () => (
+        ],
+        'plain-text',
+        currentValue
+      );
+    };
+    
+    const { hours, minutes } = generateTimeOptions();
+    
+    return (
     <Modal
       visible={showTimePicker}
       transparent
@@ -461,18 +463,18 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
                 style={[
                   styles.ampmButton,
                   { 
-                    backgroundColor: selectedAmPm === 'AM' ? theme.secondary : theme.cardBackground,
+                    backgroundColor: internalAmPm === 'AM' ? theme.secondary : theme.cardBackground,
                     borderWidth: 2,
-                    borderColor: selectedAmPm === 'AM' ? theme.secondary : theme.border
+                    borderColor: internalAmPm === 'AM' ? theme.secondary : theme.border
                   }
                 ]}
                 onPress={() => {
-                  setSelectedAmPm('AM');
+                  setInternalAmPm('AM');
                 }}
               >
                 <Text style={[
                   styles.ampmText,
-                  { color: selectedAmPm === 'AM' ? '#FFFFFF' : theme.text }
+                  { color: internalAmPm === 'AM' ? '#FFFFFF' : theme.text }
                 ]}>
                   AM
                 </Text>
@@ -481,18 +483,18 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
                 style={[
                   styles.ampmButton,
                   { 
-                    backgroundColor: selectedAmPm === 'PM' ? theme.secondary : theme.cardBackground,
+                    backgroundColor: internalAmPm === 'PM' ? theme.secondary : theme.cardBackground,
                     borderWidth: 2,
-                    borderColor: selectedAmPm === 'PM' ? theme.secondary : theme.border
+                    borderColor: internalAmPm === 'PM' ? theme.secondary : theme.border
                   }
                 ]}
                 onPress={() => {
-                  setSelectedAmPm('PM');
+                  setInternalAmPm('PM');
                 }}
               >
                 <Text style={[
                   styles.ampmText,
-                  { color: selectedAmPm === 'PM' ? '#FFFFFF' : theme.text }
+                  { color: internalAmPm === 'PM' ? '#FFFFFF' : theme.text }
                 ]}>
                   PM
                 </Text>
@@ -610,8 +612,7 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
             <TouchableOpacity
               style={[styles.timePickerButton, { backgroundColor: theme.secondary }]}
               onPress={() => {
-                setScheduledTime(`${displayHour}:${displayMinute}`);
-                setShowTimePicker(false);
+                handleTimeSelect(displayHour, displayMinute, internalAmPm);
               }}
             >
               <Text style={[styles.timePickerButtonText, { color: '#FFFFFF' }]}>Done</Text>
@@ -620,7 +621,8 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
         </View>
       </View>
     </Modal>
-  );
+    );
+  };
 
   const CalendarModal = () => (
     <Modal
@@ -854,7 +856,7 @@ export function AddReminderModal({ visible, onClose, onReminderAdded, theme }: A
                 >
                   <Clock size={20} color={theme.primary} />
                   <Text style={[styles.timeSelectorText, { color: modalTheme.inputText }]}>
-                    {`${displayHour}:${displayMinute} ${selectedAmPm}`}
+                    {`${scheduledTime} ${selectedAmPm}`}
                   </Text>
                 </TouchableOpacity>
               </View>
