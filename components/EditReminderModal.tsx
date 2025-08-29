@@ -610,12 +610,6 @@ export function EditReminderModal({ visible, onClose, onReminderUpdated, reminde
     );
   };
   
-  const handleTimeSelect = (hour: string, minute: string, ampm: string) => {
-    setScheduledTime(`${hour}:${minute}`);
-    setSelectedAmPm(ampm);
-    setShowTimePicker(false);
-  };
-
   const CalendarModal = () => (
     <Modal
       visible={showCalendar}
